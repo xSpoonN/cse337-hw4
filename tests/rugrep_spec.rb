@@ -158,6 +158,10 @@ describe "parseArgs" do
         expect { parseArgs(["\"app\"","testfiles2/","-A_1"]) }.to output(
             "apple\napplication\n--\napplication\n[0-9]\n").to_stdout
     end
+    example "-A_1 -v one file" do
+        expect { parseArgs(["\"app\"","testfiles2/","-A_1","-v"]) }.to output(
+            "21345678\napple\n--\n[0-9]\n").to_stdout
+    end
     example "-B_2 ^app" do
         expect { parseArgs(["\"^app\"","testfiles/","-B_2"]) }.to output(
             "testfiles/asdf: 21345678\ntestfiles/asdf: apple\n--\n"\
