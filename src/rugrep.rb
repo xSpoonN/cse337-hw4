@@ -8,10 +8,8 @@ def parseArgs(args)
   optv = false; optc = false; optl = false; optL = false; opto = false; optF = false
   optA = 0; optB = 0
   files = []; patterns = []
-  startPats = false; endPats = false
+  startPats = false; endPats = false; cout = []; usecout = false
   if args.length < 2 then return error() end
-  print 'Args: ', args.join(", "), "\n"
-  # Parse arguments given to populate options/patterns/files
   args.each do |arg|
     if arg.start_with?("\"") then # Regex
       if not startPats then startPats = true end
@@ -21,7 +19,7 @@ def parseArgs(args)
         regex = Regexp.new(reg)
         patterns.append(reg)
       rescue => e 
-        puts('Error: cannot parse regex'); end
+        puts("Error: cannot parse regex #{reg}"); end
     elsif arg.start_with?('-') then #Option
       if startPats then endPats = true end
       if arg == '-v' or arg == '--invert-match' then 
@@ -65,11 +63,10 @@ def parseArgs(args)
       else return error() end
     else #Filepath or error
       if startPats then endPats = true end
-      unless not (File.directory?(arg)) then files.append(arg) end
+      files.append(arg)
     end
   end
-  print 'Opts: v>', optv,' c>', optc,' l>', optl,' L>', optL,' o>', opto,' F>', optF,' A>', optA,' B>', optB, "\n"
-  # Checks for illegal option combinations
+  if files.length == 0 then puts "Error: could not read file"; return end
   if not ((optv and not (optc or optl or optL or opto or optF or optA != 0 or optB != 0)) or #-v
     (optc and not (optl or optL or opto or optF or optA != 0 or optB != 0)) or #-c [-v]
     (optl and not (optc or optv or optL or opto or optF or optA != 0 or optB != 0)) or #-l
@@ -77,17 +74,18 @@ def parseArgs(args)
     (opto and not (optv or optl or optL or optF or optA != 0 or optB != 0)) or #-o [-c]
     (optF and not (optl or optL or opto or optA != 0 or optB != 0)) or #-F [-v/-c/-c -v]
     (optF and opto and not (optc or optv or optl or optL or optA != 0 or optB != 0)) or #-F -o
-    ((optA != 0 or optB != 0) and not (optc or optl or optL or opto or optF)) or
-    (not (optv or optc or optl or optL or opto or optF or optA != 0 or optB != 0))) then #-A/B/C [-v] 
+    ((optA != 0 or optB != 0) and not (optc or optl or optL or opto or optF)) or #-A/B/C [-v] 
+    (not (optv or optc or optl or optL or opto or optF or optA != 0 or optB != 0))) then 
     return error() end
-  print 'Patterns: ', patterns, "\n"
   if patterns.length == 0 then return error() end
-  fposmatch = []; fnegmatch = []#; findices = Hash.new([])
+  fposmatch = []; fnegmatch = []
   bline = []
-  # Scan through every file
   files.each do |path| 
     begin
+      fcount = 0; fiter = 0
+      Dir.each_child(path) { fcount += 1 }
       Dir.each_child(path) do |fn|
+        fiter += 1
         matched = false
         lposmatch = []; lnegmatch = []; lcount = 0
         iter = 0
@@ -123,48 +121,77 @@ def parseArgs(args)
               patreg = Regexp.new(pat)
               if line =~ patreg then 
                 lcount += 1
-                lposmatch.concat(line)
+                lposmatch.append(line)
+              else lnegmatch.append(line)
               end
             end
           end 
           iter += 1
         end
-        lposmatch = lposmatch.uniq #Deletes duplicates
-        lnegmatch = lnegmatch.uniq
         if lposmatch.length != 0 then fposmatch.append("#{path}#{fn}") #Saves matched filenames
         else fnegmatch.append("#{path}#{fn}") end
-        #findices["#{path}#{fn}"] = optv ? lnegmatch : lposmatch
         if optF then #-F
-          if optc then #-c -v or -c
-            if optv then puts lnegmatch.length
-            else puts lposmatch.length end
-          elsif optv then puts lnegmatch #-v
-          elsif opto then puts lposmatch #-o
-          else puts lposmatch #no args
+          if fcount > 1 then
+            if optc then #-c -v or -c
+              if optv then puts "#{path}#{fn}: #{lnegmatch.length}"
+              else puts "#{path}#{fn}: #{lposmatch.length}" end
+            elsif optv then lnegmatch.each {|m| puts "#{path}#{fn}: #{m}"} #-v
+            elsif opto then lposmatch.each {|m| puts "#{path}#{fn}: #{m}"} #-o
+            else lposmatch.each {|m| puts "#{path}#{fn}: #{m}"} #no args
+            end
+          else
+            if optc then #-c -v or -c
+              if optv then puts lnegmatch.length
+              else puts lposmatch.length end
+            elsif optv then puts lnegmatch #-v
+            elsif opto then puts lposmatch #-o
+            else puts lposmatch #no args
+            end
           end  
         elsif optA != 0 or optB != 0 then
           a = IO.readlines("#{path}#{fn}")
+          usecout = true
           if optv then
+            liter = 0
             lnegmatch.each do |index|
+              liter += 1
               pre = index.to_i()-optB
               if pre < 0 then pre = 0 end
-              puts a[pre...index.to_i()+optA+1]
-              if lnegmatch.length > 1 then puts '--' end
+              if fcount > 1 then 
+                cin = ""
+                a[pre...index.to_i()+optA+1].each {|m| cin += "#{path}#{fn}: #{m}"}
+                cout.append(cin)
+              else 
+                cout.append(a[pre...index.to_i()+optA+1].join())
+              end
             end
           else
+            liter = 0
             lposmatch.each do |index|
+              liter += 1
               pre = index.to_i()-optB
               if pre < 0 then pre = 0 end
-              puts a[pre...index.to_i()+optA+1]
-              if lposmatch.length > 1 then puts '--' end
+              if fcount > 1 then 
+                cin = ""
+                a[pre...index.to_i()+optA+1].each {|m| cin += "#{path}#{fn}: #{m}"}
+                cout.append(cin)
+              else 
+                cout.append(a[pre...index.to_i()+optA+1].join())
+              end
             end
           end
         elsif opto then
-          if optc then puts lcount
-          else puts lposmatch
+          if fcount > 1 then 
+            if optc then puts "#{path}#{fn}: #{lcount}"
+            else lposmatch.each {|m| puts "#{path}#{fn}: #{m}"}
+            end
+          else
+            if optc then puts lcount
+            else puts lposmatch
+            end
           end
         elsif optc then
-          if files.length > 1 then 
+          if fcount > 1 then 
             if optv then puts "#{path}#{fn}: #{iter-lcount}"
             else puts "#{path}#{fn}: #{lcount}" end
           else
@@ -172,7 +199,13 @@ def parseArgs(args)
             else puts "#{lcount}" end
           end 
         elsif not optl and not optL 
-          puts lposmatch
+          if fcount > 1 then
+            if optv then lnegmatch.each {|m| puts "#{path}#{fn}: #{m}"}
+            else lposmatch.each {|m| puts "#{path}#{fn}: #{m}"} end
+          else
+            if optv then puts lnegmatch
+            else puts lposmatch end
+          end
         end 
       end
     rescue => e 
@@ -180,6 +213,7 @@ def parseArgs(args)
   end
   if optl then puts fposmatch # -l
   elsif optL then puts fnegmatch end # -L
+  if usecout then puts cout.join("--\n") end
 end
 
 puts parseArgs(args)
